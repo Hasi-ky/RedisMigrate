@@ -3,19 +3,25 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+
 	"github.com/go-redis/redis/v7"
 )
 
 func main() {
 	client := redis.NewClient(&redis.Options{
 		//Addr:     "redis-svc:6379",
-		Addr:     "redis-cluster-svc-np:6379",
+		//Addr:     "redis-cluster-svc-np:6379",
+		Addr:     "localhost:6379",
 		Password: "",
 		DB:       0,
 	})
 	pong, err := client.Ping().Result()
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println(pong, err)
 	defer client.Close()
 	file, err := os.Create("output.txt")
