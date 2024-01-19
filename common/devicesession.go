@@ -12,24 +12,7 @@ import (
 // UplinkHistorySize contains the number of frames to store
 const UplinkHistorySize = 20
 
-// RXWindow defines the RX window option.
-type RXWindow int8
-type Array []int
 
-type Channel struct {
-	Frequency int
-	MinDR     int
-	MaxDR     int
-	enabled   bool
-	custom    bool
-}
-
-type DeviceMode string
-
-type CID byte
-type DevAddr [4]byte
-type EUI64 [8]byte
-type AES128Key [16]byte
 
 func (e EUI64) String() string {
 	return hex.EncodeToString(e[:])

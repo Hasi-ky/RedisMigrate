@@ -2,9 +2,7 @@ package main
 
 import (
 	"batch/common"
-	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,14 +27,6 @@ const (
 )
 
 var (
-	devAddrKey          = "lora:ns:devaddr:" //该键值配合地址信息 value=set集合形式(devEui)  === lora_moteCfg中可以取到
-	devDeviceKey        = "lora:ns:device:"
-	devDeviceSuffixKey  = ":gwrx"
-	devDeviceGwTopoKey  = "lora:topo:gw:"
-	devDeviceDevTopoKey = "lora:topo:dev:"
-	devDeviceTopoKey    = "lora:topo:"
-	devDeviceHiskey     = "lora:his"
-	devSeparator        = ":"
 	needUrlGroup        = []string{"mongodb://lora_activeMote:lora_activeMote@%s/lora_activeMote",
 		"mongodb://lora_moteData:lora_moteData@%s/lora_moteData"}
 	collection         = map[string]string{}
@@ -138,7 +128,7 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 							}
 							str.WriteString(hexString)
 						}
-						key := devAddrKey + str.String()
+						key := common.DevAddrKey + str.String()
 						pipe := rdb.TxPipeline()
 						for devE, _ := range devEuiSet {
 							temp, _ := hex.DecodeString(strings.ToLower(devE))
@@ -214,14 +204,14 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 							fmt.Println("压缩编码出现错误")
 							log.Fatal(err)
 						}
-						err = rdb.Set(devDeviceKey+ds.DevEUI.String(), b, deviceSessionTTL).Err()
+						err = rdb.Set(common.DevDeviceKey+ds.DevEUI.String(), b, deviceSessionTTL).Err()
 						if err != nil {
 							fmt.Println("设置值到redis存在异常")
 							log.Fatal(err)
 						}
-						globalDs = ds //全局备份后续使用
+						globalDs = ds //全局备份后续使用, 每次扫描后会被更新
 						//生成对应设备网关信息 =====================================gwrx
-						gwrxKey := devDeviceKey + ds.DevEUI.String() + devDeviceSuffixKey
+						gwrxKey := common.DevDeviceKey + ds.DevEUI.String() + common.DevDeviceSuffixKey
 						rxInfoSet := common.DeviceGatewayRXInfoSet{
 							DevEUI: ds.DevEUI,
 							DR:     ds.DR,
@@ -244,7 +234,7 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 						}
 						lowerGw := strings.ToLower(result["gwmac"].(string))
 						//topo 网关下辖 设备
-						gwTopoDevKey := devDeviceGwTopoKey + lowerGw
+						gwTopoDevKey := common.DevDeviceGwTopoKey + lowerGw
 						err = rdb.SAdd(gwTopoDevKey, hex.EncodeToString(devEUI[:])).Err()
 						if err != nil {
 							fmt.Println("网关关联至设备缓存异常")
@@ -252,7 +242,7 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 						rdb.Expire(gwTopoDevKey, deviceSessionSevenTTL)
 
 						//设备上联网关
-						devTopoGwKey := devDeviceDevTopoKey + hex.EncodeToString(devEUI[:])
+						devTopoGwKey := common.DevDeviceDevTopoKey + hex.EncodeToString(devEUI[:])
 						err = rdb.SAdd(devTopoGwKey, lowerGw).Err()
 						if err != nil {
 							fmt.Println("设备关联至网关缓存异常")
@@ -266,17 +256,14 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 						}
 						gatewayURL := fmt.Sprintf(gatewayUrl, "mongos-svc:27017")
 						getGatewayInfo(ctx, &data, result["gwmac"].(string), gatewayURL, "lora_gateway")
-						var buf bytes.Buffer
-						if err := gob.NewEncoder(&buf).Encode(data); err != nil {
-							fmt.Println("设备与网关混合数据转化失败")
-							log.Fatal(err)
-						}
 						valueJson, _ := json.Marshal(data)
-						devTopoWithGwKey := devDeviceTopoKey + lowerGw + devSeparator + hex.EncodeToString(devEUI[:])
+						devTopoWithGwKey := common.DevDeviceTopoKey + lowerGw + common.DevSeparator + hex.EncodeToString(devEUI[:])
 						err = rdb.Set(devTopoWithGwKey, valueJson, deviceSessionTTL).Err()
 						if err != nil {
 							fmt.Println("设备网关混合数据设置失败")
 						}
+						// 激活情况录入
+						getActivationData(result, rdb)
 					}
 				} else if needValue == "his" {
 					//key : devEui
@@ -345,20 +332,20 @@ func getValueFromMongo(ctx context.Context, url string, rdb *redis.Client) {
 					}
 					for dev, data := range history { //存在就加入，不存在就直接生成
 						fmt.Printf("设备devEUI:%s 且其对应的数据量为:%v\n", dev, len(data))
-						isExist, _ := rdb.HExists(devDeviceHiskey, dev).Result()
+						isExist, _ := rdb.HExists(common.DevDeviceHiskey, dev).Result()
 						var valueJson []byte
 						if isExist {
 							var tempExistHistory []common.DeviceHistory
-							existData := []byte(rdb.HGet(devDeviceHiskey, dev).Val())
+							existData := []byte(rdb.HGet(common.DevDeviceHiskey, dev).Val())
 							json.Unmarshal(existData, &tempExistHistory)
 							tempExistHistory = append(tempExistHistory, data...)
 							valueJson, _ = json.Marshal(tempExistHistory)
-							fmt.Println("下看数据量为:", len(tempExistHistory))
+							fmt.Println("历史数据量为:", len(tempExistHistory))
 						} else {
-							fmt.Println("下看数据量为:", len(data))
+							fmt.Println("历史数据量为:", len(data))
 							valueJson, _ = json.Marshal(data)
 						}
-						rdb.HSet(devDeviceHiskey, dev, valueJson)
+						rdb.HSet(common.DevDeviceHiskey, dev, valueJson)
 					}
 				}
 			}
@@ -401,4 +388,21 @@ func getGatewayInfo(ctx context.Context, redisData *common.TopologyRedisData, gw
 		}
 	}
 	fmt.Println("<getGatewayInfo> 没有找到对应网关!")
+}
+
+//激活数据的构成方式应该为map
+//唯一设备映射唯一激活
+func getActivationData(result bson.M, rdb *redis.Client) {
+	activationData := common.DeviceActivation{
+		DevEUI:      globalDs.DevEUI,
+		CreatedAt:   result["createTime"].(primitive.DateTime).Time(),
+		DevAddr:     globalDs.DevAddr,
+		SNwkSIntKey: globalDs.SNwkSIntKey,
+		FNwkSIntKey: globalDs.FNwkSIntKey,
+		NwkSEncKey:  globalDs.NwkSEncKey,
+		DevNonce:    common.StringToDevNounce(result["devNonce"].(string)),
+		JoinReqType: common.JoinRequestType, //默认为首次入网迁移
+	}
+	valueJson, _ := json.Marshal(activationData)
+	rdb.HSet(common.DevActivationKey, hex.EncodeToString(globalDs.DevEUI[:]), valueJson)
 }

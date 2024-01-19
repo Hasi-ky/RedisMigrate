@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-redis/redis/v7"
 	"github.com/gofrs/uuid"
@@ -17,15 +18,16 @@ import (
 )
 
 var (
-	cursor   uint64
-	keys     []string
-	err      error
-	host     = "127.0.0.1"
-	port     = "5432"
-	user     = "iotware"
-	pwd      = "iotware"
-	dbName   = "iotware"
-	redisUrl = "redis-svc:6379"
+	cursor        uint64
+	keys          []string
+	err           error
+	host          = "127.0.0.1"
+	port          = "5432"
+	user          = "iotware"
+	pwd           = "iotware"
+	dbName        = "iotware"
+	redisUrl      = "redis-svc:6379"
+	DevAddrKeyAll = "lora:ns:devaddr*"
 )
 
 func main() {
@@ -66,7 +68,7 @@ func getPsqlClient() *sqlx.DB {
 func storeAddrToPsql(db *sqlx.DB, rdb *redis.Client) {
 	//首先将对应profile部分内容还原
 	for {
-		keys, cursor, err = rdb.Scan(cursor, "lora:ns:devaddr*", 100).Result()
+		keys, cursor, err = rdb.Scan(cursor, DevAddrKeyAll, 100).Result()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -106,6 +108,8 @@ func restoreRedis(db *sqlx.DB, rdb *redis.Client) {
 		devEui := common.ByteToEUI(devEuiB)
 		restoreHisAndDs(userId, devEui, rdb, db)
 	}
+	insertActivation(rdb, db)
+	sweepRedis(rdb)
 }
 
 //hitory还原, ds, 还原同时向数据库中插入activation 以及history相关数据
@@ -127,7 +131,7 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64, rdb *redis.Client, d
 	}
 	//着手插入history
 	rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis)
-	insertIHistory(db, historyMsg)
+	insertHistory(db, historyMsg)
 
 	//ds还原 ========= 分隔 ======
 	deviceKey := common.DevDeviceKey + devEuiStr
@@ -140,8 +144,6 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64, rdb *redis.Client, d
 	}
 	ds := common.DeviceSessionFromPB(&devicePB)
 	ds.UserId = userId
-
-	//着手插入activation表 ========== 分隔 =========
 	dsPB := common.DeviceSessionToPB(ds)
 	newDeviceSession, err2 := proto.Marshal(dsPB)
 	if err2 != nil {
@@ -158,11 +160,11 @@ func getAddrFromKey(key string) common.DevAddr {
 }
 
 //消息插入时无排序要求
-func insertIHistory(db *sqlx.DB, historyMsg []common.DeviceHistory) {
-	fmt.Println("等待插入的数据",len(historyMsg))
+func insertHistory(db *sqlx.DB, historyMsg []common.DeviceHistory) {
 	for index, deviceHistory := range historyMsg {
+		deviceHistory.Time.Add(-8*time.Hour)
 		deviceHistory.Id = strconv.Itoa(index + 1)
-		_, err := db.Exec(`
+		_, err = db.Exec(`
 insert into lora_device_history(
    id, deveui, gwmac, type, lsnr, rssi, chan, rfch, freq, modulation, bw, sf,seq, coderate, adr, port,direction,content,time,user_id                        
 )values ($1, $2, $3, $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) on conflict (id)
@@ -193,4 +195,59 @@ DO UPDATE SET id=$1,deveui=$2,gwmac=$3,type=$4,lsnr=$5,rssi=$6,chan=$7,rfch=$8,f
 			log.Fatal(err)
 		}
 	}
+}
+
+//插入激活信息
+func insertActivation(rdb *redis.Client, db *sqlx.DB) {
+	activationMap := rdb.HGetAll(common.DevActivationKey).Val()
+	for devEUI, jsonStr := range activationMap {
+		var activationData common.DeviceActivation
+		err := json.Unmarshal([]byte(jsonStr), &activationData)
+		if err != nil {
+			fmt.Printf("设备[%s] 激活信息部分解码出现错误!", devEUI)
+			continue
+		}
+		err = sqlx.Get(db, &activationData.ID, `
+		insert into lora_device_activation (
+			created_at,
+			dev_eui,
+			join_eui,
+			dev_addr,
+		    app_s_key,
+			s_nwk_s_int_key,
+			f_nwk_s_int_key,
+			nwk_s_enc_key,
+			dev_nonce,
+			join_req_type
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9,$10)
+		returning id`,
+			activationData.CreatedAt,
+			activationData.DevEUI[:],
+			activationData.JoinEUI[:],
+			activationData.DevAddr[:],
+			activationData.AppsKey[:],
+			activationData.SNwkSIntKey[:],
+			activationData.FNwkSIntKey[:],
+			activationData.NwkSEncKey[:],
+			activationData.DevNonce,
+			activationData.JoinReqType,
+		)
+		if err != nil {
+			fmt.Printf("设备[%s] 激活信息插入失败", devEUI)
+			log.Fatal(err)
+		}
+	}
+}
+
+//扫尾处理
+func sweepRedis(rdb *redis.Client) {
+	err := rdb.Del(common.DevActivationKey).Err()
+	if err != nil {
+		fmt.Println("删除键值失败，请查看redis")
+	}
+	err = rdb.Del(common.DevDeviceHiskey).Err()
+	if err != nil {
+		fmt.Println("删除键值失败，请查看redis")
+	}
+	fmt.Println("扫尾工作完成")
 }
