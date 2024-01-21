@@ -162,7 +162,7 @@ func getAddrFromKey(key string) common.DevAddr {
 //消息插入时无排序要求
 func insertHistory(db *sqlx.DB, historyMsg []common.DeviceHistory) {
 	for index, deviceHistory := range historyMsg {
-		deviceHistory.Time.Add(-8*time.Hour)
+		deviceHistory.Time = deviceHistory.Time.Add(-8 * time.Hour)
 		deviceHistory.Id = strconv.Itoa(index + 1)
 		_, err = db.Exec(`
 insert into lora_device_history(
