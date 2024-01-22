@@ -48,6 +48,7 @@ var (
 	DevDeviceHiskey     = "lora:his:"
 	DevSeparator        = ":"
 	DevActivationKey    = "lora:activeion:"
+	REDIS_VERSION = ""
 )
 
 type TopologyRedisData struct {

@@ -2,15 +2,16 @@ package main
 
 import (
 	"batch/common"
+	"batch/db/redis"
+	"batch/global"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/go-redis/redis/v7"
+	log "github.com/sirupsen/logrus"	
 	"github.com/gofrs/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -26,49 +27,103 @@ var (
 	user          = "iotware"
 	pwd           = "iotware"
 	dbName        = "iotware"
-	redisUrl      = "redis-svc:6379"
 	DevAddrKeyAll = "lora:ns:devaddr*"
 )
 
+var (
+	redisHost    string
+	redisDBName  string
+	redisPwd     string
+	psqlHost     string
+	psqlUser     string
+	psqlPwd      string
+	psqlDBName   string
+	redisVersion string
+	redisCluster bool
+)
+
 func main() {
-	rdb := getRedisClient(redisUrl)
-	defer rdb.Close()
-	d := getPsqlClient()
-	defer d.Close()
-	storeAddrToPsql(d, rdb)
-	restoreRedis(d, rdb)
-}
-
-func getRedisClient(redisUrl string) *redis.Client {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisUrl,
-	})
-	err = rdb.Ping().Err()
-	if err != nil {
-		fmt.Println("redis连接失败")
-		log.Fatal(err)
+	flag.StringVar(&host, "rH", "redis-svc:6379", "-rH=172.0.0.1:6379")
+	flag.StringVar(&redisDBName, "rDB", "0", "-rDB=0")
+	flag.StringVar(&redisPwd, "rPD", "", "-rPD=123456")
+	flag.StringVar(&psqlHost, "pH", "127.0.0.1", "-pH=127.0.0.1")
+	flag.StringVar(&psqlUser, "pU", "iotware", "-pU=iotware")
+	flag.StringVar(&psqlPwd, "pP", "iotware", "-pP=iotware")
+	flag.StringVar(&psqlDBName, "pDB", "iotware", "-pDB=iotware")
+	flag.StringVar(&redisVersion, "rV", "", "-rV=4")
+	flag.BoolVar(&redisCluster, "rC", false, "-rC=false")
+	help := flag.Bool("help", false, "Display help infomation")
+	flag.Parse()
+	if *help {
+		printHelp()
 	}
-	fmt.Println("redis连接成功")
-	return rdb
+
+	getRedisClient()
+	defer global.Rdb.CloseSession()
+	getPsqlClient()
+	defer global.Sdb.Close()
+	storeAddrToPsql()
+	// restoreRedis(d, rdb)
 }
 
-func getPsqlClient() *sqlx.DB {
-	psqlInfo := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		user, pwd, host, port, dbName)
-	d, err := sqlx.Open("postgres", psqlInfo)
-	if err != nil {
-		fmt.Println("获取数据库连接失败!")
-		log.Fatal(err)
+func printHelp() {
+	fmt.Print(`
+Usage:
+	Psqlmigrate [-rH=127.0.0.1:6379] -rDB=0 [-password=Auth] [-rC=F] [-rV=4] ....
+
+Options:
+	-rH=redisHost                 The redis instance (host:port).
+	-rDB=redisDBName              The redis DBName use (0-15)
+	-rPD=redisPassword            The redis Password
+	-rV=redisVersion              The redis version
+	-rC=redisCluster              Is Redis a cluster
+	-pH=psqlHost                  The postgres instance
+	-pU=psqlUserName              The postgres username
+	-pP=psqlPassword              The postgres password
+	-pDB=psqlDBName               The postgres dbname
+
+Examples:
+	$ Psqlmigrate -rH=127.0.0.1
+	$ Psqlmigrate -rH=127.0.0.1 -rPD=123445
+	$ Psqlmigrate -rH=127.0.0.1 -rPD=123445
+	$ Psqlmigrate -rH=127.0.0.1 -rPD=123445 -rV=7
+	`)
+}
+
+func getRedisClient(){
+	hostAndPort := strings.Split(redisHost, ":")
+	var err error
+	if redisCluster {
+		servers := []string{redisHost}
+		global.Rdb, err = redis.NewClusterClient(servers, redisPwd)
+	} else {
+		global.Rdb, err = redis.NewClient(hostAndPort[0], hostAndPort[1], redisPwd)
 	}
-	fmt.Println("获取数据库连接成功!")
-	return d
+	if err != nil {
+		log.Fatal("redis client创键失败")
+	}
+	pingRes := global.Rdb.Ping()
+	if !pingRes {
+		log.Fatal("redis连接失败")
+	}
+	log.Infoln("redis连接失败")
 }
 
-//还原profile中对应内容
-func storeAddrToPsql(db *sqlx.DB, rdb *redis.Client) {
-	//首先将对应profile部分内容还原
+func getPsqlClient() {
+	var err error
+	psqlInfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		psqlUser, psqlPwd, psqlHost, psqlDBName)
+	global.Sdb, err = sqlx.Open("postgres", psqlInfo)
+	if err != nil {
+		log.Fatal("获取数据库连接失败!",err)
+	}
+	log.Infoln("获取数据库连接成功!")
+}
+
+// 还原profile中对应内容
+func storeAddrToPsql() {
 	for {
-		keys, cursor, err = rdb.Scan(cursor, DevAddrKeyAll, 100).Result()
+		keys, cursor, err = global.Rdb.Scan(cursor, DevAddrKeyAll, 100)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -76,12 +131,11 @@ func storeAddrToPsql(db *sqlx.DB, rdb *redis.Client) {
 		for _, key := range keys {
 			fmt.Println(key)
 			addr := getAddrFromKey(key)
-			devEUIs := rdb.SMembers(key).Val()
+			devEUIs, _ :=  global.Rdb.Smembers(key)
 			for _, devEUI := range devEUIs {
-				_, err = db.Exec(updateProfile, addr[:], []byte(devEUI)[:])
+				_, err = global.Sdb.Exec(updateProfile, addr[:], []byte(devEUI)[:])
 				if err != nil {
-					fmt.Println("数据库更新对应profile失效")
-					log.Fatal(err)
+					log.Fatal("数据库更新对应profile失效", err)
 				}
 			}
 		}
@@ -91,7 +145,7 @@ func storeAddrToPsql(db *sqlx.DB, rdb *redis.Client) {
 	}
 }
 
-//history缓存中数据的user-id数据还原，以及ds当中数据的还原
+// history缓存中数据的user-id数据还原，以及ds当中数据的还原
 func restoreRedis(db *sqlx.DB, rdb *redis.Client) {
 	rows, err := db.Query("SELECT user_id, dev_eui FROM lora_device_profile")
 	if err != nil {
@@ -112,10 +166,14 @@ func restoreRedis(db *sqlx.DB, rdb *redis.Client) {
 	sweepRedis(rdb)
 }
 
-//hitory还原, ds, 还原同时向数据库中插入activation 以及history相关数据
+// hitory还原, ds, 还原同时向数据库中插入activation 以及history相关数据
 func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64, rdb *redis.Client, db *sqlx.DB) {
 	devEuiStr := hex.EncodeToString(devEui[:])
-	historyByte := []byte(rdb.HGet(common.DevDeviceHiskey, devEuiStr).Val())
+	historyByte, err1 := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
+	if err1 != nil {
+		log.Info("无历史数据",err1)
+		return
+	}
 	var historyMsg []common.DeviceHistory
 	err = json.Unmarshal(historyByte, &historyMsg)
 	if err != nil {
@@ -159,7 +217,7 @@ func getAddrFromKey(key string) common.DevAddr {
 	return common.ByteToAddr(byteAddr)
 }
 
-//消息插入时无排序要求
+// 消息插入时无排序要求
 func insertHistory(db *sqlx.DB, historyMsg []common.DeviceHistory) {
 	for index, deviceHistory := range historyMsg {
 		deviceHistory.Time = deviceHistory.Time.Add(-8 * time.Hour)
@@ -197,7 +255,7 @@ DO UPDATE SET id=$1,deveui=$2,gwmac=$3,type=$4,lsnr=$5,rssi=$6,chan=$7,rfch=$8,f
 	}
 }
 
-//插入激活信息
+// 插入激活信息
 func insertActivation(rdb *redis.Client, db *sqlx.DB) {
 	activationMap := rdb.HGetAll(common.DevActivationKey).Val()
 	for devEUI, jsonStr := range activationMap {
@@ -239,7 +297,7 @@ func insertActivation(rdb *redis.Client, db *sqlx.DB) {
 	}
 }
 
-//扫尾处理
+// 扫尾处理
 func sweepRedis(rdb *redis.Client) {
 	err := rdb.Del(common.DevActivationKey).Err()
 	if err != nil {
