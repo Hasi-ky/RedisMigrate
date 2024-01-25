@@ -1,6 +1,8 @@
 package main
 
 import (
+	"batch/common"
+	"batch/global"
 	"batch/redismigrate/commands"
 	"flag"
 	"fmt"
@@ -12,40 +14,29 @@ const ModeDump = "dump"
 const ModeRestore = "restore"
 
 func main() {
-	var (
-		mode                string
-		host                string
-		password            string
-		output              string
-		input               string
-		databaseCountString string
-	)
-
-	flag.StringVar(&mode, "mode", "", "-mode=[dump|restore]")
-	flag.StringVar(&host, "host", "127.0.0.1:6379", "-host=127.0.0.1:6379")
-	flag.StringVar(&password, "password", "", "-password=your_password")
-	flag.StringVar(&output, "output", "dump.json", "-output=/path/to/file")
-	flag.StringVar(&input, "input", "dump.json", "-input=/path/to/file")
-	flag.StringVar(&databaseCountString, "database-count", "", "-database-count=16")
-
+	flag.StringVar(&common.Mode, "mode", "", "-mode=[dump|restore]")
+	flag.StringVar(&common.RedisHost, "host", "redis-svc:6379", "-host=127.0.0.1:6379")
+	flag.StringVar(&common.RedisPwd, "password", "", "-password=your_password")
+	flag.StringVar(&common.Output, "output", "dump.json", "-output=/path/to/file")
+	flag.StringVar(&common.Input, "input", "dump.json", "-input=/path/to/file")
+	flag.StringVar(&common.DatabaseCountString, "database-count", "", "-database-count=16")
+	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
+	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
 	flag.Parse()
-	if mode == ModeDump {
-
+	global.GetRedisClient()
+	if common.Mode == ModeDump {
 		var databaseCount uint64
-
-		if databaseCountString != "" {
-
+		if common.DatabaseCountString != "" {
 			var err error
-			databaseCount, err = strconv.ParseUint(databaseCountString, 10, 64)
+			databaseCount, err = strconv.ParseUint(common.DatabaseCountString, 10, 64)
 			if err != nil {
-
 				log.Printf("Parse database-count err, %s\n", err)
 				return
 			}
 		}
-		commands.Dump(host, password, output, databaseCount)
-	} else if mode == ModeRestore {
-		commands.Restore(host, password, input)
+		commands.Dump(common.RedisHost, common.RedisPwd, common.Output, databaseCount)
+	} else if common.Mode == ModeRestore {
+		commands.Restore(common.RedisHost, common.RedisPwd, common.Input)
 	} else {
 		printHelp()
 	}
@@ -62,6 +53,8 @@ Options:
 	-password=PASSWORD                The redis authorization password, if empty then no use this parameter.
 	-input=FILE                       Use for restore data file.
 	-output=FILE                      Use for save the dump data file.
+	-rC=true                          The redis instance cluster
+	-rV=7                             The redis-server version is 7
 
 Examples:
 	$ redis-dump-restore -mode=dump

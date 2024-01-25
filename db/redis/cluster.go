@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	redis7 "github.com/go-redis/redis/v7"
 	redis9 "github.com/redis/go-redis/v9"
@@ -308,7 +309,7 @@ func (rc *ClusterClient) Lset(key string, index int, value []byte) (string, erro
 }
 
 //Sadd Sadd
-func (rc *ClusterClient) Sadd(key string, member string) (int, error) {
+func (rc *ClusterClient) Sadd(key string, member interface{}) (int, error) {
 	if rc == nil || rc.ClusterClient == nil {
 		return 0, errors.New("redis client is disconnect")
 	}
@@ -368,7 +369,7 @@ func (rc *ClusterClient) Smembers(key string) ([]string, error) {
 }
 
 //Set Set
-func (rc *ClusterClient) Set(key string, value string) (string, error) {
+func (rc *ClusterClient) Set(key string, value interface{}, expiration time.Duration) (string, error) {
 	if rc == nil || rc.ClusterClient == nil {
 		return "", errors.New("redis client is disconnect")
 	}
@@ -377,9 +378,9 @@ func (rc *ClusterClient) Set(key string, value string) (string, error) {
 		err   error
 	)
 	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
-		reply, err = r.Set(key, value, 0).Result()
+		reply, err = r.Set(key, value, expiration).Result()
 	} else {
-		reply, err = rc.ClusterClient.(*redis9.ClusterClient).Set(context.TODO(), key, value, 0).Result()
+		reply, err = rc.ClusterClient.(*redis9.ClusterClient).Set(context.TODO(), key, value, expiration).Result()
 	}
 	if err == redis9.Nil || err == redis7.Nil {
 		err = nil
@@ -428,21 +429,52 @@ func (rc *ClusterClient) Incr(transferKey string) (int, error) {
 }
 
 //scan
-func (rc *ClusterClient) Scan(cursor uint64, match string, count int64) ([]string, uint64, error) {
+func (rc *ClusterClient) Scan(cursor uint64, match string, count int64) ([]string, error) {
 	if rc == nil || rc.ClusterClient == nil {
-		return nil, 0, errors.New("redis client is disconnect")
+		return nil, errors.New("redis client is disconnect")
 	}
 	var (
-		keys       []string
-		err        error
-		nextCursor uint64
+		keys []string
+		err  error
 	)
-	if r, ok := rc.ClusterClient.(*redis7.Client); ok {
-		keys, nextCursor, err = r.Scan(cursor, match, count).Result()
-	} else {
-		keys, nextCursor, err = rc.ClusterClient.(*redis9.Client).Scan(context.TODO(), cursor, match, count).Result()
+	var callbackScan7 = func(r *redis7.Client) error {
+		for {
+			scanValue, tempCursor, err := r.Scan(cursor, match, count).Result()
+			if err != nil {
+				return err
+			}
+			if len(scanValue) != 0 {
+				keys = append(keys, scanValue...)
+			}
+			cursor = tempCursor
+			if cursor == 0 {
+				break
+			}
+		}
+		return nil
 	}
-	return keys, nextCursor, err
+	var callbackScan9 = func(ctx context.Context, r *redis9.Client) error {
+		for {
+			scanValue, tempCursor, err := r.Scan(ctx, cursor, match, count).Result()
+			if err != nil {
+				return err
+			}
+			if len(scanValue) != 0 {
+				keys = append(keys, scanValue...)
+			}
+			cursor = tempCursor
+			if cursor == 0 {
+				break
+			}
+		}
+		return nil
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		err = r.ForEachMaster(callbackScan7)
+	} else {
+		err = rc.ClusterClient.(*redis9.ClusterClient).ForEachMaster(context.TODO(), callbackScan9)
+	}
+	return keys, err
 }
 
 //Hget
@@ -454,10 +486,10 @@ func (rc *ClusterClient) HGet(key, field string) ([]byte, error) {
 		result string
 		err    error
 	)
-	if r, ok := rc.ClusterClient.(*redis7.Client); ok {
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
 		result, err = r.HGet(key, field).Result()
 	} else {
-		result, err = rc.ClusterClient.(*redis9.Client).HGet(context.TODO(), key, field).Result()
+		result, err = rc.ClusterClient.(*redis9.ClusterClient).HGet(context.TODO(), key, field).Result()
 	}
 	return []byte(result), err
 }
@@ -469,10 +501,105 @@ func (rc *ClusterClient) HSet(key, field string, value []byte) error {
 		err = errors.New("redis client is disconnect")
 		return err
 	}
-	if r, ok := rc.ClusterClient.(*redis7.Client); ok {
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
 		r.HSet(key, field, value)
 	} else {
-		rc.ClusterClient.(*redis9.Client).HSet(context.TODO(), key, field, value)
+		rc.ClusterClient.(*redis9.ClusterClient).HSet(context.TODO(), key, field, value)
 	}
 	return err
+}
+
+//TTL
+func (rc *ClusterClient) TTL(key string) (time.Duration, error) {
+	var (
+		err error
+		dr  time.Duration
+	)
+	if rc == nil || rc.ClusterClient == nil {
+		err = errors.New("redis client is disconnect")
+		return 0, err
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		dr = r.TTL(key).Val()
+	} else {
+		dr = rc.ClusterClient.(*redis9.ClusterClient).TTL(context.TODO(), key).Val()
+	}
+	return dr, err
+}
+
+//HGET
+func (rc *ClusterClient) HGetAll(key string) (map[string]string, error) {
+	var (
+		err    error
+		resMap map[string]string
+	)
+	if rc == nil || rc.ClusterClient == nil {
+		err = errors.New("redis client is disconnect")
+		return nil, err
+	}
+	if r, ok := rc.ClusterClient.(*redis7.Client); ok {
+		resMap = r.HGetAll(key).Val()
+	} else {
+		resMap = rc.ClusterClient.(*redis9.Client).HGetAll(context.TODO(), key).Val()
+	}
+	return resMap, err
+}
+
+//expire
+func (rc *ClusterClient) Expire(key string, expiration time.Duration) error {
+	var err error
+	if rc == nil || rc.ClusterClient == nil {
+		err = errors.New("redis client is disconnect")
+		return err
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		_, err = r.Expire(key, expiration).Result()
+	} else {
+		_, err = rc.ClusterClient.(*redis9.ClusterClient).Expire(context.TODO(), key, expiration).Result()
+	}
+	return err
+}
+
+//TXPipeline
+func (rc *ClusterClient) TxPipeline() interface{} {
+	if rc == nil || rc.ClusterClient == nil {
+		return errors.New("redis client is disconnect")
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		return r.TxPipeline()
+	}
+	return rc.ClusterClient.(*redis9.ClusterClient).TxPipeline()
+}
+
+//HExist
+func (rc *ClusterClient) HExists(key, field string) (bool, error) {
+	if rc == nil || rc.ClusterClient == nil {
+		return false, errors.New("redis client is disconnect")
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		return r.HExists(key, field).Result()
+	}
+	return rc.ClusterClient.(*redis9.ClusterClient).HExists(context.TODO(), key, field).Result()
+}
+
+//Dump
+func (rc *ClusterClient) Dump(key string) (string, error) {
+	if rc == nil || rc.ClusterClient == nil {
+		return "", errors.New("redis client is disconnect")
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		return r.Dump(key).Result()
+	}
+	return rc.ClusterClient.(*redis9.ClusterClient).Dump(context.TODO(), key).Result()
+}
+
+//RestoreReplace
+func (rc *ClusterClient) RestoreReplace(key string, ttl time.Duration, field string) (string, error) {
+	if rc == nil || rc.ClusterClient == nil {
+		return "", errors.New("redis client is disconnect")
+	}
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
+		return r.RestoreReplace(key, ttl, field).Result()
+	}
+	return rc.ClusterClient.(*redis9.ClusterClient).RestoreReplace(context.TODO(), key, ttl, field).Result()
 }

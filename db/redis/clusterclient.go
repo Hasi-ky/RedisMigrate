@@ -54,3 +54,4 @@ func NewClusterClient(servers []string, password string) (*ClusterClient, error)
 	log.Errorf("current cluster redis version is: %v\n", common.REDIS_VERSION)
 	return r, nil
 }
+

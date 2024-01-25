@@ -36,6 +36,10 @@ const (
 	RejoinRequestType0 JoinType = 0x00
 	RejoinRequestType1 JoinType = 0x01
 	RejoinRequestType2 JoinType = 0x02
+	//总体按照数据库的形式来分类
+
+	DeviceSessionTTL      = time.Hour * 24 * 31
+	DeviceSessionSevenTTL = time.Hour * 24 * 7
 )
 
 var (
@@ -47,8 +51,22 @@ var (
 	DevDeviceTopoKey    = "lora:topo:"
 	DevDeviceHiskey     = "lora:his:"
 	DevSeparator        = ":"
-	DevActivationKey    = "lora:activeion:"
-	REDIS_VERSION = ""
+	DevActivationKey    = "lora:activation:"
+	DevAddrKeyAll       = "lora:ns:devaddr*"
+	REDIS_VERSION       = ""
+	RedisHost           string
+	RedisDBName         string
+	RedisPwd            string
+	RedisCluster        bool
+	MongoHost           string
+	PsqlHost            string
+	PsqlUser            string
+	PsqlPwd             string
+	PsqlDBName          string
+	Mode string
+	Output string
+	Input string
+	DatabaseCountString string
 )
 
 type TopologyRedisData struct {
@@ -78,7 +96,7 @@ type DeviceHistory struct {
 	Direction  string         `db:"direction" json:"direction,omitempty"` // up/down
 	GatewayMac EUI64          `db:"gwmac" json:"gwmac,omitempty"`
 	Id         string         `db:"id" json:"id,omitempty"` // id,用于记录获取到多少条报文
-	UserId     uuid.UUID      `db:"user_id,omitempty"`                //运维新增
+	UserId     uuid.UUID      `db:"user_id,omitempty"`      //运维新增
 	DevEui     EUI64          `db:"deveui" json:"devEui,omitempty"`
 	Bw         int            `db:"bw" json:"bw,omitempty"`             // 带宽
 	CodeRate   string         `db:"coderate" json:"codeRate,omitempty"` // 编码率
