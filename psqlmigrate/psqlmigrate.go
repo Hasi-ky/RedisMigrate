@@ -256,7 +256,7 @@ func insertActivation() {
 			activationData.JoinReqType,
 		)
 		if err != nil {
-			log.Errorf("设备[%s] 激活信息插入失败\n", devEUI)
+			log.Errorf("设备[%s] 激活信息插入失败%v\n", devEUI, err)
 		}
 	}
 }

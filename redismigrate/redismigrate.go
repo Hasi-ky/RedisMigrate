@@ -6,8 +6,9 @@ import (
 	"batch/redismigrate/commands"
 	"flag"
 	"fmt"
-	"log"
 	"strconv"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const ModeDump = "dump"
@@ -19,27 +20,34 @@ func main() {
 	flag.StringVar(&common.RedisPwd, "password", "", "-password=your_password")
 	flag.StringVar(&common.Output, "output", "dump.json", "-output=/path/to/file")
 	flag.StringVar(&common.Input, "input", "dump.json", "-input=/path/to/file")
-	flag.StringVar(&common.DatabaseCountString, "database-count", "", "-database-count=16")
+	flag.StringVar(&common.DatabaseCountString, "database-count", "16", "-database-count=16")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
 	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
+	help := flag.Bool("help", false, "Display help infomation")
 	flag.Parse()
-	global.GetRedisClient()
-	if common.Mode == ModeDump {
-		var databaseCount uint64
-		if common.DatabaseCountString != "" {
-			var err error
-			databaseCount, err = strconv.ParseUint(common.DatabaseCountString, 10, 64)
-			if err != nil {
-				log.Printf("Parse database-count err, %s\n", err)
-				return
-			}
-		}
-		commands.Dump(common.RedisHost, common.RedisPwd, common.Output, databaseCount)
-	} else if common.Mode == ModeRestore {
-		commands.Restore(common.RedisHost, common.RedisPwd, common.Input)
-	} else {
+	if *help {
 		printHelp()
+	} else {
+		global.GetRedisClient()
+		defer global.Rdb.CloseSession()
+		if common.Mode == ModeDump {
+			var databaseCount uint64
+			if common.DatabaseCountString != "" {
+				var err error
+				databaseCount, err = strconv.ParseUint(common.DatabaseCountString, 10, 64)
+				if err != nil {
+					log.Printf("Parse database-count err, %s\n", err)
+					return
+				}
+			}
+			commands.Dump(common.RedisHost, common.RedisPwd, common.Output, databaseCount)
+		} else if common.Mode == ModeRestore {
+			commands.Restore(common.RedisHost, common.RedisPwd, common.Input)
+		} else {
+			log.Warnln("请键入正确的运行模式")
+		}
 	}
+
 }
 func printHelp() {
 

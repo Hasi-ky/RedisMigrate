@@ -1,12 +1,14 @@
 package commands
 
 import (
+	"batch/common"
 	"batch/db/redis"
 	"batch/global"
 	"encoding/base64"
 	"encoding/json"
 	"os"
 	"strings"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -19,12 +21,11 @@ type Dumper struct {
 }
 
 func (d *Dumper) Dump() {
-
 	cursor := uint64(0)
 	keys, err := d.scan(cursor)
 	if err != nil {
 		log.Printf("Error: Scan keys error, %s\n", err)
-		return 
+		return
 	}
 	for _, key := range keys {
 		if strings.Contains(key, "lora") {
@@ -131,15 +132,23 @@ func Dump(host, password, path string, databaseCount uint64) {
 	// if databaseCount == 0 {
 	// 	databaseCount = getDatabaseCount(host, password)
 	// }
-
-	var currentDatabase uint64
-	for currentDatabase = 0; currentDatabase < databaseCount; currentDatabase++ {
+	if common.RedisCluster {
 		dumper := &Dumper{
 			Client:     global.Rdb,
 			Path:       path,
-			DatabaseId: currentDatabase,
+			DatabaseId: 0,
 		}
 		dumper.Dump()
+	} else {
+		var currentDatabase uint64
+		for currentDatabase = 0; currentDatabase < databaseCount; currentDatabase++ {
+			dumper := &Dumper{
+				Client:     global.Rdb,
+				Path:       path,
+				DatabaseId: currentDatabase,
+			}
+			dumper.Dump()
+		}
 	}
 }
 
