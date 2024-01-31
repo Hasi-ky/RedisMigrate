@@ -119,32 +119,12 @@ func restoreRedis() {
 
 // hitory还原, ds, 还原同时向数据库中插入activation 以及history相关数据
 func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
-	var err error
-	devEuiStr := hex.EncodeToString(devEui[:])
-	historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
-	if err != nil {
-		log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
-		return
-	}
 	var (
 		historyMsg []common.DeviceHistory
+		err error
 		devicePB   common.DeviceSessionPB
+		devEuiStr = hex.EncodeToString(devEui[:])
 	)
-	err = json.Unmarshal(historyByte, &historyMsg)
-	if err != nil {
-		log.Errorf("设备[%s]数据解析失败%v\n", devEuiStr, err)
-		return
-	}
-	for i := 0; i < len(historyMsg); i++ {
-		historyMsg[i].UserId = userId
-	}
-	byteNewHis, err := json.Marshal(historyMsg)
-	if err != nil {
-		log.Errorf("设备[%s]数据回填失败%v\n", devEuiStr, err)
-		return
-	}
-	global.Rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis) //缓存重置
-	insertHistory(historyMsg)
 	//devicesession还原 =========== 分隔 ===============
 	deviceSession, err := global.Rdb.Get(common.DevDeviceKey + devEuiStr)
 	if err != nil {
@@ -173,6 +153,27 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	if err6 != nil {
 		log.Errorf("设备[%s]设置缓存过程异常%v\n", devEuiStr, err6)
 	}
+	//===============历史数据处理================
+	historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
+	if err != nil {
+		log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
+		return
+	}
+	err = json.Unmarshal(historyByte, &historyMsg)
+	if err != nil {
+		log.Errorf("设备[%s]数据解析失败%v\n", devEuiStr, err)
+		return
+	}
+	for i := 0; i < len(historyMsg); i++ {
+		historyMsg[i].UserId = userId
+	}
+	byteNewHis, err := json.Marshal(historyMsg)
+	if err != nil {
+		log.Errorf("设备[%s]数据回填失败%v\n", devEuiStr, err)
+		return
+	}
+	global.Rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis) //缓存重置
+	insertHistory(historyMsg)
 }
 
 func getAddrFromKey(key string) common.DevAddr {
