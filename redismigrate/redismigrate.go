@@ -22,7 +22,7 @@ func main() {
 	flag.StringVar(&common.Input, "input", "dump.json", "-input=/path/to/file")
 	flag.StringVar(&common.DatabaseCountString, "database-count", "16", "-database-count=16")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
-	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
+	flag.StringVar(&common.REDIS_VERSION, "rV", "4", "-rV=4")
 	help := flag.Bool("help", false, "Display help infomation")
 	flag.Parse()
 	if *help {

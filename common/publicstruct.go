@@ -1,6 +1,7 @@
 package common
 
 import (
+	"os"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -51,7 +52,6 @@ var (
 	DevDeviceGwTopoKey  = "lora:topo:gw:"
 	DevDeviceDevTopoKey = "lora:topo:dev:"
 	DevDeviceTopoKey    = "lora:topo:"
-	DevDeviceHiskey     = "lora:his:"
 	DevSeparator        = ":"
 	DevActivationKey    = "lora:activation:"
 	DevAddrKeyAll       = "lora:ns:devaddr*"
@@ -70,6 +70,7 @@ var (
 	Input               string
 	DatabaseCountString string
 	NeedHistory         bool
+	FileHistory         *os.File
 )
 
 type TopologyRedisData struct {
@@ -118,4 +119,8 @@ type DeviceActivation struct {
 	NwkSEncKey  AES128Key `db:"nwk_s_enc_key" json:"nwkSEncKey,omitempty"`
 	DevNonce    DevNonce  `db:"dev_nonce" json:"devNonce,omitempty"`
 	JoinReqType JoinType  `db:"join_req_type" json:"joinReqType"`
+}
+
+type DeviceHistoryJson struct {
+	Content map[string][]DeviceHistory `db:"content" json:"content,omitempty"`
 }

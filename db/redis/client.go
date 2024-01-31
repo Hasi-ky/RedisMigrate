@@ -49,7 +49,7 @@ func NewClient(host string, port string, password string) (*Client, error) {
 		log.Errorln(err)
 		return nil, err
 	}
-	log.Errorf("current single redis version is: %v", common.REDIS_VERSION)
+	log.Errorf("current single redis version is: %v\n", common.REDIS_VERSION)
 	return r, nil
 }
 

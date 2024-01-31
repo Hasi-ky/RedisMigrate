@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"os"
 	"strings"
 	"time"
 
@@ -16,11 +17,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var historyMsg map[string][]common.DeviceHistory
+
 func main() {
 	flag.StringVar(&common.RedisHost, "rH", "redis-svc:6379", "-rH=redis-svc:6379")
 	flag.StringVar(&common.RedisDBName, "rDB", "0", "-rDB=0")
 	flag.StringVar(&common.RedisPwd, "rPD", "", "-rPD=123456")
-	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
+	flag.StringVar(&common.REDIS_VERSION, "rV", "4", "-rV=4")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
 	flag.StringVar(&common.PsqlHost, "pH", "127.0.0.1", "-pH=127.0.0.1")
 	flag.StringVar(&common.PsqlUser, "pU", "iotware", "-pU=iotware")
@@ -33,15 +36,19 @@ func main() {
 		printHelp()
 		return
 	}
+
 	global.GetRedisClient()
 	global.GetPsqlClient()
 	defer global.Rdb.CloseSession()
 	defer global.Sdb.Close()
+	if common.NeedHistory {
+		historyMsg = make(map[string][]common.DeviceHistory)
+		openDevHisSwitch()
+		getDataFromHistory()
+	}
 	storeAddrToPsql()
 	restoreRedis()
-	if common.NeedHistory {
-		openDevHisSwitch()
-	}
+
 }
 
 func printHelp() {
@@ -117,10 +124,9 @@ func restoreRedis() {
 // hitory还原, ds, 还原同时向数据库中插入activation 以及history相关数据
 func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	var (
-		historyMsg []common.DeviceHistory
-		err        error
-		devicePB   common.DeviceSessionPB
-		devEuiStr  = hex.EncodeToString(devEui[:])
+		err       error
+		devicePB  common.DeviceSessionPB
+		devEuiStr = hex.EncodeToString(devEui[:])
 	)
 	//devicesession还原 =========== 分隔 ===============
 	log.Infof("设备[%s]开始还原DeviceSession缓存内容", devEuiStr)
@@ -156,28 +162,12 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 
 	//===============历史数据处理================
 	if common.NeedHistory {
-		historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
-		if err != nil {
-			log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
-			return
+		if insertValue, ok := historyMsg[devEuiStr]; ok {
+			for i := 0; i < len(insertValue); i++ {
+				insertValue[i].UserId = userId
+			}
+			insertHistory(insertValue)
 		}
-		log.Infof("设备[%s]开始还原History内容", devEuiStr)
-		err = json.Unmarshal(historyByte, &historyMsg)
-		if err != nil {
-			log.Errorf("设备[%s]数据解析失败%v\n", devEuiStr, err)
-			return
-		}
-		for i := 0; i < len(historyMsg); i++ {
-			historyMsg[i].UserId = userId
-		}
-		byteNewHis, err := json.Marshal(historyMsg)
-		if err != nil {
-			log.Errorf("设备[%s]数据回填失败%v\n", devEuiStr, err)
-			return
-		}
-		global.Rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis) //缓存重置
-		insertHistory(historyMsg)
-		log.Infof("设备[%s]结束还原History内容", devEuiStr)
 	}
 }
 
@@ -276,15 +266,70 @@ func openDevHisSwitch() {
 	}
 }
 
+//history.json中读取数据
+func getDataFromHistory() {
+	// 读取文件内容
+	// fileData, err := ioutil.ReadFile("history.json")
+	// if err != nil {
+	// 	log.Errorln("读取历史文件出错", err)
+	// 	common.NeedHistory = false
+	// }
+	// var tempHisArray []common.DeviceHistory
+	// err = json.Unmarshal(fileData, &tempHisArray)
+	// if err != nil {
+	// 	log.Errorln("解析历史文件出错", err)
+	// 	common.NeedHistory = false
+	// 	return
+	// }
+	// for _, v := range tempHisArray {
+	// 	var (
+	// 		record []common.DeviceHistory
+	// 		ok     bool
+	// 	)
+	// if record, ok = historyMsg[v.DevEui.String()]; !ok {
+	// 	record = make([]common.DeviceHistory, 0)
+	// }
+	// record = append(record, v)
+	// historyMsg[v.DevEui.String()] = record
+	// }
+	
+	fileData, err := os.Open("history.json")
+	defer fileData.Close()
+	if err != nil {
+		log.Errorln("读取历史文件出错", err)
+		common.NeedHistory = false
+	}
+	decoder := json.NewDecoder(fileData)
+	for {
+		var (
+			record []common.DeviceHistory
+			ok     bool
+			tempHis common.DeviceHistory
+		)
+		err := decoder.Decode(&tempHis)
+		if err != nil {
+			// 如果是文件结束错误，跳出循环
+			if err.Error() == "EOF" {
+				break
+			} else {
+				log.Errorln("解析JSON数据时出错:", err)
+				common.NeedHistory = false
+				break
+			}
+		}
+		if record, ok = historyMsg[tempHis.DevEui.String()]; !ok {
+			record = make([]common.DeviceHistory, 0)
+		}
+		record = append(record, tempHis)
+		historyMsg[tempHis.DevEui.String()] = record
+	}
+}
+
 // 扫尾处理
 func sweepRedis() {
 	_, err := global.Rdb.Del(common.DevActivationKey)
 	if err != nil {
 		log.Errorf("删除键值[%s]失败, 请查看redis %v\n", common.DevActivationKey, err)
-	}
-	_, err = global.Rdb.Del(common.DevDeviceHiskey)
-	if err != nil {
-		log.Errorf("删除键值[%s]失败, 请查看redis %v\n", common.DevDeviceHiskey, err)
 	}
 	log.Infoln("残余键扫尾工作完成")
 }

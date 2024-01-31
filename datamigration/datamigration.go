@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,8 @@ var (
 	historyUrl         = "mongodb://lora_moteData:lora_moteData@%s/lora_moteData"
 	globalDs           common.DeviceSession
 	ctx                = context.Background()
+	historyCount       = 0
+	history            = make(map[string][]common.DeviceHistory, 0)
 )
 
 func init() {
@@ -69,9 +72,9 @@ func main() {
 	flag.StringVar(&common.RedisHost, "rH", "redis-cluster-svc-np:6379", "-rH=redis-cluster-svc-np:6379")
 	flag.StringVar(&common.RedisDBName, "rDB", "0", "-rDB=0")
 	flag.StringVar(&common.RedisPwd, "rPD", "", "-rPD=")
-	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
+	flag.StringVar(&common.REDIS_VERSION, "rV", "4", "-rV=4")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
-	flag.BoolVar(&common.NeedHistory, "his", false, "-rC=false")
+	flag.BoolVar(&common.NeedHistory, "his", true, "-rC=false")
 	flag.StringVar(&common.MongoHost, "mH", "mongos-svc:27017", "-mH=mongos-svc:27017")
 	help := flag.Bool("help", false, "Display help infomation")
 	flag.Parse()
@@ -81,12 +84,31 @@ func main() {
 	}
 	global.GetRedisClient()
 	defer global.Rdb.CloseSession()
+
+	//历史数据
 	if common.NeedHistory {
+		var err error
+		if _, err = os.Stat("history.json"); err == nil {
+			err = os.Remove("history.json")
+			if err != nil {
+				log.Errorln("删除文件失败:", err)
+				return
+			}
+		}
 		needUrlGroup = append(needUrlGroup, historyUrl)
+		common.FileHistory, err = os.Create("history.json")
+		if err != nil {
+			fmt.Println("创建文件失败:", err)
+			return
+		}
 	}
 	for _, url := range needUrlGroup {
 		realUrl := fmt.Sprintf(url, common.MongoHost)
 		getDataFromMongo(ctx, realUrl)
+	}
+	if common.NeedHistory {
+		storageHistory() //扫描所有集合后落盘
+		common.FileHistory.Close()
 	}
 	log.Infoln("数据提取完成")
 }
@@ -130,6 +152,7 @@ func getDataFromMongo(ctx context.Context, url string) {
 			}
 		}
 	}
+
 }
 
 //网关信息
@@ -497,8 +520,6 @@ func gateWayMixedDev(result primitive.M, pipeline *interface{}, lowerGw string) 
 
 func dealDevHistory(cursor *mongo.Cursor) {
 	log.Infoln("设备历史数据缓存提取开始")
-	hisCount := 0
-	history := make(map[string][]common.DeviceHistory, 0)
 	for cursor.Next(ctx) { //游标扫描全部数据
 		var (
 			result       bson.M
@@ -524,9 +545,9 @@ func dealDevHistory(cursor *mongo.Cursor) {
 		}
 		gwMacToByte, _ := hex.DecodeString(gwMac)
 		devEUIToByte, _ := hex.DecodeString(devEUI)
-		hisCount++
+		historyCount++
 		devEUIForHis = append(devEUIForHis, common.DeviceHistory{
-			Id:         strconv.Itoa(hisCount),
+			Id:         strconv.Itoa(historyCount),
 			GatewayMac: common.ByteToEUI(gwMacToByte),
 			DevEui:     common.ByteToEUI(devEUIToByte),
 		})
@@ -584,25 +605,23 @@ func dealDevHistory(cursor *mongo.Cursor) {
 		}
 		history[devEUI] = devEUIForHis
 	}
-	for dev, data := range history { //存在就加入，不存在就直接生成
-		log.Infof("设备devEUI:%s 且其对应的数据量为:%v\n", dev, len(data))
-		isExist, _ := global.Rdb.HExists(common.DevDeviceHiskey, dev)
-		var valueJson []byte
-		if isExist {
-			var tempExistHistory []common.DeviceHistory
-			existData, _ := global.Rdb.HGet(common.DevDeviceHiskey, dev)
-			json.Unmarshal(existData, &tempExistHistory)
-			tempExistHistory = append(tempExistHistory, data...)
-			valueJson, _ = json.Marshal(tempExistHistory)
-			log.Infof("设备[%s]历史数据数据量为:%v\n", dev, len(tempExistHistory))
-		} else {
-			valueJson, _ = json.Marshal(data)
-			log.Infof("设备[%s]历史数据数据量为:%v\n", dev, len(data))
-		}
-		err := global.Rdb.HSet(common.DevDeviceHiskey, dev, valueJson)
-		if err != nil {
-			log.Errorf("设备[%s]设置数据进入redis发生错误", err)
+	log.Infoln("设备历史数据缓存提取结束")
+}
+
+func storageHistory() {
+	log.Infoln("设备历史数据落盘开始")
+	log.Infof("统计设备总量为:%v\n", len(history))
+	for _, data := range history {
+		for _, v := range data {
+			valueJson, err := json.Marshal(v)
+			if err != nil {
+				log.Fatalln("历史数据压缩失败\n")
+			}
+			_, err = common.FileHistory.Write(valueJson)
+			if err != nil {
+				log.Fatalln("历史数据写入history.json失败", err)
+			}
 		}
 	}
-	log.Infoln("设备历史数据缓存提取结束")
+	log.Infoln("设备历史数据落盘结束")
 }
