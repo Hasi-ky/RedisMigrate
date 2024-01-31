@@ -16,8 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var ()
-
 func main() {
 	flag.StringVar(&common.RedisHost, "rH", "redis-svc:6379", "-rH=redis-svc:6379")
 	flag.StringVar(&common.RedisDBName, "rDB", "0", "-rDB=0")
@@ -28,7 +26,7 @@ func main() {
 	flag.StringVar(&common.PsqlUser, "pU", "iotware", "-pU=iotware")
 	flag.StringVar(&common.PsqlPwd, "pP", "iotware", "-pP=iotware")
 	flag.StringVar(&common.PsqlDBName, "pDB", "iotware", "-pDB=iotware")
-	needHistory := flag.Bool("his", true, "set history switch")
+	flag.BoolVar(&common.NeedHistory, "his", false, "-rC=false")
 	help := flag.Bool("help", false, "Display help infomation")
 	flag.Parse()
 	if *help {
@@ -41,7 +39,7 @@ func main() {
 	defer global.Sdb.Close()
 	storeAddrToPsql()
 	restoreRedis()
-	if *needHistory {
+	if common.NeedHistory {
 		openDevHisSwitch()
 	}
 }
@@ -49,7 +47,7 @@ func main() {
 func printHelp() {
 	log.Infof(`
 Usage:
-	Psqlmigrate [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=F] [-rV=4] ....
+	Psqlmigrate [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=false] [-rV=4] [-his=true] ....
 
 Options:
 	-rH=redisHost                 The redis instance (host:port).
@@ -88,7 +86,6 @@ func storeAddrToPsql() {
 		for _, devEUI := range devEUIs {
 			_, err = global.Sdb.Exec(updateProfile, addr[:], []byte(devEUI)[:])
 			if err != nil {
-
 				log.Errorf("设备[%s]数据库更新对应profile失效 %v\n", hex.EncodeToString([]byte(devEUI)), err)
 			}
 		}
@@ -121,11 +118,12 @@ func restoreRedis() {
 func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	var (
 		historyMsg []common.DeviceHistory
-		err error
+		err        error
 		devicePB   common.DeviceSessionPB
-		devEuiStr = hex.EncodeToString(devEui[:])
+		devEuiStr  = hex.EncodeToString(devEui[:])
 	)
 	//devicesession还原 =========== 分隔 ===============
+	log.Infof("设备[%s]开始还原DeviceSession缓存内容", devEuiStr)
 	deviceSession, err := global.Rdb.Get(common.DevDeviceKey + devEuiStr)
 	if err != nil {
 		log.Errorf("设备[%s]获取Session缓存失败%v\n", devEuiStr, err)
@@ -152,28 +150,35 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	_, err6 := global.Rdb.Set(common.DevDeviceKey+devEuiStr, newDeviceSession, duration)
 	if err6 != nil {
 		log.Errorf("设备[%s]设置缓存过程异常%v\n", devEuiStr, err6)
+	} else {
+		log.Infof("设备[%s]结束还原DeviceSession缓存内容", devEuiStr)
 	}
+
 	//===============历史数据处理================
-	historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
-	if err != nil {
-		log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
-		return
+	if common.NeedHistory {
+		historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
+		if err != nil {
+			log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
+			return
+		}
+		log.Infof("设备[%s]开始还原History内容", devEuiStr)
+		err = json.Unmarshal(historyByte, &historyMsg)
+		if err != nil {
+			log.Errorf("设备[%s]数据解析失败%v\n", devEuiStr, err)
+			return
+		}
+		for i := 0; i < len(historyMsg); i++ {
+			historyMsg[i].UserId = userId
+		}
+		byteNewHis, err := json.Marshal(historyMsg)
+		if err != nil {
+			log.Errorf("设备[%s]数据回填失败%v\n", devEuiStr, err)
+			return
+		}
+		global.Rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis) //缓存重置
+		insertHistory(historyMsg)
+		log.Infof("设备[%s]结束还原History内容", devEuiStr)
 	}
-	err = json.Unmarshal(historyByte, &historyMsg)
-	if err != nil {
-		log.Errorf("设备[%s]数据解析失败%v\n", devEuiStr, err)
-		return
-	}
-	for i := 0; i < len(historyMsg); i++ {
-		historyMsg[i].UserId = userId
-	}
-	byteNewHis, err := json.Marshal(historyMsg)
-	if err != nil {
-		log.Errorf("设备[%s]数据回填失败%v\n", devEuiStr, err)
-		return
-	}
-	global.Rdb.HSet(common.DevDeviceHiskey, devEuiStr, byteNewHis) //缓存重置
-	insertHistory(historyMsg)
 }
 
 func getAddrFromKey(key string) common.DevAddr {

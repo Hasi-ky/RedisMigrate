@@ -4,6 +4,7 @@ import (
 	"batch/common"
 	"batch/global"
 	"flag"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -26,18 +27,21 @@ func main() {
 		log.Fatalln("Error getting keys:", err)
 	}
 	for _, key := range keys {
+		if strings.Contains(key, common.GwDeviceKey) || strings.Contains(key, common.GwDeviceRouteKey) {
+			continue
+		}
 		_, err := global.Rdb.Del(key)
 		if err != nil {
-			log.Errorln("Error deleting key", key, ":", err)
+			log.Fatalln("Error deleting key", key, ":", err)
 		}
 	}
-	log.Infoln("相关数据清空完成")
+	log.Infoln("Lora终端数据清空完成")
 }
 
 func printHelp() {
 	log.Infof(`
 Usage:
-	RedisClear [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=F] [-rV=4] ....
+	RedisClear [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=false] [-rV=4] ....
 
 Options:
 	-rH=redisHost                 The redis instance (host:port).
@@ -48,7 +52,6 @@ Options:
 
 Examples:
 	$ RedisClear -rH=127.0.0.1
-	$ RedisClear -rH=127.0.0.1 -rPD=123445
 	$ RedisClear -rH=127.0.0.1 -rPD=123445
 	$ RedisClear -rH=127.0.0.1 -rPD=123445 -rV=7
 	`)

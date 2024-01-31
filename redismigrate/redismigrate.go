@@ -53,7 +53,7 @@ func printHelp() {
 
 	fmt.Print(`
 Usage:
-	redis-dump-restore -mode=[dump|restore] -host=127.0.0.1:6379 [-password=Auth] [-database-count=16] [-output=/path/to/file] [-input=/path/to/file]
+	dumper -mode=[dump|restore] -host=127.0.0.1:6379 [-password=Auth] [-database-count=16] [-output=/path/to/file] [-input=/path/to/file] [-rC=true]
 
 Options:
 	-mode=MODE                        Select dump mode, or restore mode. Options: Dump, Restore.

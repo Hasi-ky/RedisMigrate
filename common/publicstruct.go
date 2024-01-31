@@ -43,6 +43,8 @@ const (
 )
 
 var (
+	GwDeviceKey         = "lora:ns:gw"
+	GwDeviceRouteKey    = "lora:ns:gwroute"
 	DevAddrKey          = "lora:ns:devaddr:" //该键值配合地址信息 value=set集合形式(devEui)  === lora_moteCfg中可以取到
 	DevDeviceKey        = "lora:ns:device:"
 	DevDeviceSuffixKey  = ":gwrx"
@@ -53,7 +55,7 @@ var (
 	DevSeparator        = ":"
 	DevActivationKey    = "lora:activation:"
 	DevAddrKeyAll       = "lora:ns:devaddr*"
-	REDIS_VERSION       = ""
+	REDIS_VERSION       = "4"
 	RedisHost           string
 	RedisDBName         string
 	RedisPwd            string
@@ -63,10 +65,11 @@ var (
 	PsqlUser            string
 	PsqlPwd             string
 	PsqlDBName          string
-	Mode string
-	Output string
-	Input string
+	Mode                string
+	Output              string
+	Input               string
 	DatabaseCountString string
+	NeedHistory         bool
 )
 
 type TopologyRedisData struct {

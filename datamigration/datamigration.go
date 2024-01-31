@@ -29,7 +29,6 @@ var (
 	needUrlGroup       = []string{"mongodb://lora_activeMote:lora_activeMote@%s/lora_activeMote"}
 	collection         = map[string]string{}
 	collectionForField = map[string][]string{}
-	needHistory        *bool
 	gatewayUrl         = "mongodb://lora_gateway:lora_gateway@%s/lora_gateway"
 	historyUrl         = "mongodb://lora_moteData:lora_moteData@%s/lora_moteData"
 	globalDs           common.DeviceSession
@@ -47,7 +46,7 @@ func init() {
 func helpPrint() {
 	log.Infof(`
 	Usage:
-		Datamigrate [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=F] [-rV=4] ....
+		Datamigrate [-rH=127.0.0.1:6379] [-rDB=0] [-password=Auth] [-rC=false] [-rV=4] [-his=true] ....
 	
 	Options:
 		-rH=redisHost                 The redis instance (host:port).
@@ -72,9 +71,9 @@ func main() {
 	flag.StringVar(&common.RedisPwd, "rPD", "", "-rPD=")
 	flag.StringVar(&common.REDIS_VERSION, "rV", "", "-rV=4")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
+	flag.BoolVar(&common.NeedHistory, "his", false, "-rC=false")
 	flag.StringVar(&common.MongoHost, "mH", "mongos-svc:27017", "-mH=mongos-svc:27017")
 	help := flag.Bool("help", false, "Display help infomation")
-	needHistory = flag.Bool("his", true, "Display help infomation")
 	flag.Parse()
 	if *help {
 		helpPrint()
@@ -82,7 +81,7 @@ func main() {
 	}
 	global.GetRedisClient()
 	defer global.Rdb.CloseSession()
-	if *needHistory {
+	if common.NeedHistory {
 		needUrlGroup = append(needUrlGroup, historyUrl)
 	}
 	for _, url := range needUrlGroup {
