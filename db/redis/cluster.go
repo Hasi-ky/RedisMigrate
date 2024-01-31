@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	redis7 "github.com/go-redis/redis/v7"
@@ -434,8 +435,9 @@ func (rc *ClusterClient) Scan(cursor uint64, match string, count int64) ([]strin
 		return nil, errors.New("redis client is disconnect")
 	}
 	var (
-		keys []string
-		err  error
+		mutex sync.Mutex
+		keys  []string
+		err   error
 	)
 	var callbackScan7 = func(r *redis7.Client) error {
 		for {
@@ -444,7 +446,9 @@ func (rc *ClusterClient) Scan(cursor uint64, match string, count int64) ([]strin
 				return err
 			}
 			if len(scanValue) != 0 {
+				mutex.Lock() 
 				keys = append(keys, scanValue...)
+				mutex.Unlock() 
 			}
 			cursor = tempCursor
 			if cursor == 0 {
@@ -460,7 +464,9 @@ func (rc *ClusterClient) Scan(cursor uint64, match string, count int64) ([]strin
 				return err
 			}
 			if len(scanValue) != 0 {
+				mutex.Lock() 
 				keys = append(keys, scanValue...)
+				mutex.Unlock() 
 			}
 			cursor = tempCursor
 			if cursor == 0 {
@@ -537,10 +543,10 @@ func (rc *ClusterClient) HGetAll(key string) (map[string]string, error) {
 		err = errors.New("redis client is disconnect")
 		return nil, err
 	}
-	if r, ok := rc.ClusterClient.(*redis7.Client); ok {
+	if r, ok := rc.ClusterClient.(*redis7.ClusterClient); ok {
 		resMap = r.HGetAll(key).Val()
 	} else {
-		resMap = rc.ClusterClient.(*redis9.Client).HGetAll(context.TODO(), key).Val()
+		resMap = rc.ClusterClient.(*redis9.ClusterClient).HGetAll(context.TODO(), key).Val()
 	}
 	return resMap, err
 }

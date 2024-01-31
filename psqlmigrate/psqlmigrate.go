@@ -123,7 +123,7 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	devEuiStr := hex.EncodeToString(devEui[:])
 	historyByte, err := global.Rdb.HGet(common.DevDeviceHiskey, devEuiStr)
 	if err != nil {
-		log.Info("设备[%s]无历史数据%v\n", devEuiStr, err)
+		log.Infof("设备[%s]无历史数据%v\n", devEuiStr, err)
 		return
 	}
 	var (
