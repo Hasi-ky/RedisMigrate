@@ -4,7 +4,6 @@ import (
 	"batch/common"
 	"batch/global"
 	"flag"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -28,9 +27,6 @@ func main() {
 		log.Fatalln("Error getting keys:", err)
 	}
 	for _, key := range keys {
-		if strings.Contains(key, common.GwDeviceKey) || strings.Contains(key, common.GwDeviceRouteKey) {
-			continue
-		}
 		_, err = global.Rdb.Del(key)
 		if err != nil {
 			log.Fatalln("Error deleting key", key, ":", err)
