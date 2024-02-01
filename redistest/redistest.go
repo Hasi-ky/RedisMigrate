@@ -1,14 +1,12 @@
 package main
 
 import (
-	"batch/common"
-	"batch/global"
+
 	"fmt"
+	"strconv"
 )
 
 func main() {
-	common.RedisHost = "localhost:6379"
-	global.GetRedisClient()
-	_, err := global.Rdb.Del("jianlai")
-	fmt.Println(err)
+	hexString := strconv.FormatInt(int64(10), 16)
+	fmt.Println(hexString)
 }

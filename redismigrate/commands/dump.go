@@ -24,7 +24,7 @@ func (d *Dumper) Dump() {
 	cursor := uint64(0)
 	keys, err := d.scan(cursor)
 	if err != nil {
-		log.Printf("Error: Scan keys error, %s\n", err)
+		log.Errorf("Error: Scan keys error, %s\n", err)
 		return
 	}
 	for _, key := range keys {
@@ -33,14 +33,14 @@ func (d *Dumper) Dump() {
 			record.Value, err = d.getSerializeString(key)
 			if err != nil {
 
-				log.Printf("Error: Get key serialize string error, %s\n", err)
+				log.Errorf("Error: Get key serialize string error, %s\n", err)
 				break
 			}
 
 			record.TTL, err = d.getTTL(key)
 			if err != nil {
 
-				log.Printf("Error: Get key ttl error, %s\n", err)
+				log.Errorf("Error: Get key ttl error, %s\n", err)
 				break
 			}
 
@@ -92,8 +92,7 @@ func (d *Dumper) writeRecord(record *Record) {
 	record.Value = base64.StdEncoding.EncodeToString([]byte(record.Value))
 	jsonBytes, err := json.Marshal(record)
 	if err != nil {
-
-		log.Printf("Marshal data error , %s\n", err)
+		log.Errorf("Marshal data error , %s\n", err)
 		return
 	}
 	d.stream.Write(jsonBytes)
@@ -110,7 +109,7 @@ func (d *Dumper) initWriter() bool {
 	fs, err := os.Create(d.Path)
 	if err != nil {
 
-		log.Printf("Init file error , %s\n", err)
+		log.Errorf("Init file error , %s\n", err)
 		return false
 	}
 
@@ -124,14 +123,10 @@ func (d *Dumper) CloseClient() {
 
 func (d *Dumper) PrintReport() {
 
-	log.Printf("DB %d dumped %d Record(s).\n", d.DatabaseId, d.Count)
+	log.Infof("DB %d dumped %d Record(s).\n", d.DatabaseId, d.Count)
 }
 
 func Dump(host, password, path string, databaseCount uint64) {
-
-	// if databaseCount == 0 {
-	// 	databaseCount = getDatabaseCount(host, password)
-	// }
 	if common.RedisCluster {
 		dumper := &Dumper{
 			Client:     global.Rdb,
@@ -151,28 +146,3 @@ func Dump(host, password, path string, databaseCount uint64) {
 		}
 	}
 }
-
-// func getDatabaseCount(host, password string) uint64 {
-// 	var databaseCount uint64
-// 	databases, err := global.Rdb.ConfigGet("databases").Result()
-// 	if err != nil {
-// 		log.Printf("Database config read error, %s\n", err)
-// 		return 0
-// 	}
-
-// 	if len(databases) == 2 {
-// 		databaseCount, err = strconv.ParseUint(fmt.Sprint(databases[1]), 10, 64)
-// 		if err != nil {
-
-// 			log.Printf("Read database count error: %s\n", err)
-// 			return 0
-// 		}
-// 	}
-
-// 	if databaseCount <= 0 {
-
-// 		log.Printf("Database count read failure\n")
-// 		return 0
-// 	}
-// 	return databaseCount
-// }

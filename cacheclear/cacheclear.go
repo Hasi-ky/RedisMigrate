@@ -22,6 +22,7 @@ func main() {
 		return
 	}
 	global.GetRedisClient()
+	defer global.Rdb.CloseSession()
 	keys, err := global.Rdb.Scan(0, "lora:*", 1000)
 	if err != nil {
 		log.Fatalln("Error getting keys:", err)
@@ -30,7 +31,7 @@ func main() {
 		if strings.Contains(key, common.GwDeviceKey) || strings.Contains(key, common.GwDeviceRouteKey) {
 			continue
 		}
-		_, err := global.Rdb.Del(key)
+		_, err = global.Rdb.Del(key)
 		if err != nil {
 			log.Fatalln("Error deleting key", key, ":", err)
 		}

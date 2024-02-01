@@ -82,11 +82,12 @@ func storeAddrToPsql() {
 		err  error
 		keys []string
 	)
-	keys, err = global.Rdb.Scan(0, common.DevAddrKeyAll, 100)
+	keys, err = global.Rdb.Scan(0, common.DevAddrKeyAll, 1000)
 	if err != nil {
 		log.Fatal(err)
 	}
 	updateProfile := "UPDATE lora_device_profile SET dev_addr = $1 WHERE dev_eui = $2"
+	log.Infoln("开始设备模板还原完成")
 	for _, key := range keys {
 		addr := getAddrFromKey(key)
 		devEUIs, _ := global.Rdb.Smembers(key)
@@ -97,7 +98,7 @@ func storeAddrToPsql() {
 			}
 		}
 	}
-	log.Infoln("设备模板还原完成")
+	log.Infoln("结束设备模板还原完成")
 }
 
 // history缓存中数据的user-id数据还原，以及ds当中数据的还原
@@ -129,7 +130,7 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 		devEuiStr = hex.EncodeToString(devEui[:])
 	)
 	//devicesession还原 =========== 分隔 ===============
-	log.Infof("设备[%s]开始还原DeviceSession缓存内容", devEuiStr)
+	log.Infof("设备[%s]开始还原DeviceSession缓存内容\n", devEuiStr)
 	deviceSession, err := global.Rdb.Get(common.DevDeviceKey + devEuiStr)
 	if err != nil {
 		log.Errorf("设备[%s]获取Session缓存失败%v\n", devEuiStr, err)
@@ -157,7 +158,7 @@ func restoreHisAndDs(userId uuid.UUID, devEui common.EUI64) {
 	if err6 != nil {
 		log.Errorf("设备[%s]设置缓存过程异常%v\n", devEuiStr, err6)
 	} else {
-		log.Infof("设备[%s]结束还原DeviceSession缓存内容", devEuiStr)
+		log.Infof("设备[%s]结束还原DeviceSession缓存内容\n", devEuiStr)
 	}
 
 	//===============历史数据处理================
@@ -208,7 +209,7 @@ DO UPDATE SET id=$1,deveui=$2,gwmac=$3,type=$4,lsnr=$5,rssi=$6,chan=$7,rfch=$8,f
 			deviceHistory.UserId,
 		)
 		if err != nil {
-			log.Fatal("数据插入数据库时发生错误!", err)
+			log.Fatalln("数据插入数据库时发生错误!", err)
 		}
 	}
 }
@@ -223,7 +224,7 @@ func insertActivation() {
 		var activationData common.DeviceActivation
 		err = json.Unmarshal([]byte(jsonStr), &activationData)
 		if err != nil {
-			log.Errorf("设备[%s] 激活信息部分解码出现错误!", devEUI)
+			log.Errorf("设备[%s] 激活信息部分解码出现错误\n", devEUI)
 			continue
 		}
 		err = sqlx.Get(global.Sdb, &activationData.ID, `
@@ -268,36 +269,12 @@ func openDevHisSwitch() {
 
 //history.json中读取数据
 func getDataFromHistory() {
-	// 读取文件内容
-	// fileData, err := ioutil.ReadFile("history.json")
-	// if err != nil {
-	// 	log.Errorln("读取历史文件出错", err)
-	// 	common.NeedHistory = false
-	// }
-	// var tempHisArray []common.DeviceHistory
-	// err = json.Unmarshal(fileData, &tempHisArray)
-	// if err != nil {
-	// 	log.Errorln("解析历史文件出错", err)
-	// 	common.NeedHistory = false
-	// 	return
-	// }
-	// for _, v := range tempHisArray {
-	// 	var (
-	// 		record []common.DeviceHistory
-	// 		ok     bool
-	// 	)
-	// if record, ok = historyMsg[v.DevEui.String()]; !ok {
-	// 	record = make([]common.DeviceHistory, 0)
-	// }
-	// record = append(record, v)
-	// historyMsg[v.DevEui.String()] = record
-	// }
-	
 	fileData, err := os.Open("history.json")
 	defer fileData.Close()
 	if err != nil {
 		log.Errorln("读取历史文件出错", err)
 		common.NeedHistory = false
+		return
 	}
 	decoder := json.NewDecoder(fileData)
 	for {
@@ -314,7 +291,7 @@ func getDataFromHistory() {
 			} else {
 				log.Errorln("解析JSON数据时出错:", err)
 				common.NeedHistory = false
-				break
+				return
 			}
 		}
 		if record, ok = historyMsg[tempHis.DevEui.String()]; !ok {

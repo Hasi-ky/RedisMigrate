@@ -38,18 +38,18 @@ func (r *Restorer) Restore() {
 		record := &Record{}
 		err := json.Unmarshal([]byte(jsonString), &record)
 		if err != nil {
-			log.Printf("Unmarshal %s error , %s\n", jsonString, err)
+			log.Errorf("Unmarshal %s error , %s\n", jsonString, err)
 			continue
 		}
 		b, err := base64.StdEncoding.DecodeString(record.Value)
 		if err != nil {
-			log.Printf("base64 decode %s error , %s\n", record.Value, err)
+			log.Errorf("base64 decode %s error , %s\n", record.Value, err)
 			continue
 		}
 		record.Value = string(b)
 		duration, err := time.ParseDuration(fmt.Sprintf("%ds", record.TTL))
 		if err != nil {
-			log.Printf("Parse ttl(%d) error, %s\n", record.TTL, err)
+			log.Errorf("Parse ttl(%d) error, %s\n", record.TTL, err)
 			continue
 		}
 		client := r.getClient(record.DatabaseId)
@@ -62,7 +62,7 @@ func (r *Restorer) Restore() {
 			_, err = client.RestoreReplace(record.Key, 0, record.Value)
 		}
 		if err != nil {
-			log.Printf("Restore error , struct: %#v , error: %s\n", record, err)
+			log.Errorf("Restore error , struct: %#v , error: %s\n", record, err)
 			break
 		}
 
@@ -144,7 +144,7 @@ func (r *Restorer) CloseStream() {
 
 func (r *Restorer) PrintReport() {
 
-	log.Printf("Restored %d Record(s).\n", r.Count)
+	log.Infof("Restored %d Record(s).\n", r.Count)
 }
 
 func Restore(host, password, path string) {
@@ -152,7 +152,7 @@ func Restore(host, password, path string) {
 	fp, err := os.Open(path)
 	if err != nil {
 
-		log.Printf("Open data file error, %s\n", err)
+		log.Errorf("Open data file error, %s\n", err)
 		return
 	}
 	restorer := &Restorer{

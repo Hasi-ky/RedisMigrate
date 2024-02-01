@@ -36,7 +36,7 @@ func main() {
 				var err error
 				databaseCount, err = strconv.ParseUint(common.DatabaseCountString, 10, 64)
 				if err != nil {
-					log.Printf("Parse database-count err, %s\n", err)
+					log.Infof("Parse database-count err, %s\n", err)
 					return
 				}
 			}
@@ -61,8 +61,8 @@ Options:
 	-password=PASSWORD                The redis authorization password, if empty then no use this parameter.
 	-input=FILE                       Use for restore data file.
 	-output=FILE                      Use for save the dump data file.
-	-rC=true                          The redis instance cluster
-	-rV=7                             The redis-server version is 7
+	-rV=redisVersion                  The redis version
+	-rC=redisCluster                  Is Redis a cluster
 
 Examples:
 	$ redis-dump-restore -mode=dump

@@ -74,7 +74,7 @@ func main() {
 	flag.StringVar(&common.RedisPwd, "rPD", "", "-rPD=")
 	flag.StringVar(&common.REDIS_VERSION, "rV", "4", "-rV=4")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
-	flag.BoolVar(&common.NeedHistory, "his", true, "-rC=false")
+	flag.BoolVar(&common.NeedHistory, "his", true, "-his=false")
 	flag.StringVar(&common.MongoHost, "mH", "mongos-svc:27017", "-mH=mongos-svc:27017")
 	help := flag.Bool("help", false, "Display help infomation")
 	flag.Parse()
@@ -98,7 +98,7 @@ func main() {
 		needUrlGroup = append(needUrlGroup, historyUrl)
 		common.FileHistory, err = os.Create("history.json")
 		if err != nil {
-			fmt.Println("创建文件失败:", err)
+			log.Errorln("创建文件失败:", err)
 			return
 		}
 	}
@@ -120,11 +120,11 @@ func getDataFromMongo(ctx context.Context, url string) {
 	client, err := mongo.Connect(ctx, clientOptions) //dataB 如lora_moteCfg // collections 比如 motescfg
 	defer client.Disconnect(ctx)
 	if err != nil {
-		log.Fatal("mongo数据库连接失败", err)
+		log.Fatalln("mongo数据库连接失败", err)
 	}
 	err = client.Ping(ctx, nil)
 	if err != nil {
-		log.Fatal("mongo数据库无法连通", err)
+		log.Fatalln("mongo数据库无法连通", err)
 	}
 	log.Infoln("mongo数据库连接成功!")
 	collections, err := client.Database(dbTableName).ListCollectionNames(ctx, bson.D{})
@@ -192,7 +192,7 @@ func getGatewayInfo(ctx context.Context, redisData *common.TopologyRedisData, gw
 							redisData.GatewayName = result["devSN"].(string)
 						}
 						if result["time"] != nil {
-							redisData.Time = result["time"].(primitive.DateTime).Time().Unix()
+							redisData.Time = result["time"].(primitive.DateTime).Time().Unix() - int64(8*time.Hour)
 						}
 						return nil
 					}
@@ -242,7 +242,7 @@ func dealDevAddr(cursor *mongo.Cursor, needValue string) {
 		var result bson.M
 		err := cursor.Decode(&result)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalln(err)
 		}
 		if result[needValue] == nil || result["devEUI"] == nil {
 			log.Warnln("设备addr值或设备唯一标识为空，放弃该设备信息处理")
@@ -265,8 +265,9 @@ func dealDevAddr(cursor *mongo.Cursor, needValue string) {
 		for _, nums := range addsFour { //地址十六进制字符串生成
 			b, err1 := strconv.Atoi(nums)
 			if err1 != nil {
-				log.Errorf("地址转化时出现异常", err1)
+				log.Errorf("地址转化时出现异常\n", err1)
 				flag = true
+				break
 			}
 			hexString := strconv.FormatInt(int64(b), 16)
 			for len(hexString) < 2 {
@@ -300,7 +301,7 @@ func dealDevSessionAndOther(cursor *mongo.Cursor) {
 		pipeline = global.Rdb.TxPipeline()
 		err := cursor.Decode(&result)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalln(err)
 		}
 		id, _ := uuid.NewV4()
 		ds := common.DeviceSession{
@@ -374,7 +375,7 @@ func dealDevSessionAndOther(cursor *mongo.Cursor) {
 		ds.UpdateTime = time.Now()
 		b, err := proto.Marshal(common.DeviceSessionToPB(ds))
 		if err != nil {
-			log.Errorf("设备[%s]压缩编码出现错误,数据格式有误\n", ds.DevEUI.String(), err) //进行下一轮扫描
+			log.Errorf("设备[%s]压缩编码出现错误,数据格式有误%v\n", ds.DevEUI.String(), err) //进行下一轮扫描
 			continue
 		}
 		if common.REDIS_VERSION == "7" {
@@ -383,7 +384,7 @@ func dealDevSessionAndOther(cursor *mongo.Cursor) {
 			_, err = pipeline.(redis7.Pipeliner).Set(common.DevDeviceKey+ds.DevEUI.String(), b, common.DeviceSessionTTL).Result()
 		}
 		if err != nil {
-			log.Errorf("设备[%s]设置deviceSession异常，%v\n", ds.DevEUI.String(), err)
+			log.Errorf("设备[%s]设置deviceSession异常%v\n", ds.DevEUI.String(), err)
 			continue
 		}
 		globalDs = ds //全局备份
@@ -529,7 +530,7 @@ func dealDevHistory(cursor *mongo.Cursor) {
 		)
 		err := cursor.Decode(&result)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalln(err)
 		}
 		if result["devEUI"] != nil {
 			devEUI = strings.ToLower(result["devEUI"].(string))
