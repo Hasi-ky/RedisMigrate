@@ -34,11 +34,12 @@ func GetRedisClient() {
 	log.Infoln("redis连接成功")
 }
 
-
 func GetPsqlClient() {
 	var err error
-	psqlInfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
-		common.PsqlUser, common.PsqlPwd, common.PsqlHost, common.PsqlDBName)
+	// psqlInfo := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+	// 	common.PsqlUser, common.PsqlPwd, common.PsqlHost, common.PsqlDBName)
+	psqlInfo := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		common.PsqlUser, common.PsqlPwd, common.PsqlHost, common.PsqlPort, common.PsqlDBName)
 	Sdb, err = sqlx.Open("postgres", psqlInfo)
 	if err != nil {
 		log.Fatal("获取数据库连接失败!", err)

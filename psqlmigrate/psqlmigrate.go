@@ -25,7 +25,8 @@ func main() {
 	flag.StringVar(&common.RedisPwd, "rPD", "", "-rPD=123456")
 	flag.StringVar(&common.REDIS_VERSION, "rV", "4", "-rV=4")
 	flag.BoolVar(&common.RedisCluster, "rC", false, "-rC=false")
-	flag.StringVar(&common.PsqlHost, "pH", "127.0.0.1", "-pH=127.0.0.1")
+	flag.StringVar(&common.PsqlHost, "pH", "postgresql-svc", "-pH=127.0.0.1")
+	flag.StringVar(&common.PsqlPort, "pPt", "9999", "-pPt=9999")
 	flag.StringVar(&common.PsqlUser, "pU", "iotware", "-pU=iotware")
 	flag.StringVar(&common.PsqlPwd, "pP", "iotware", "-pP=iotware")
 	flag.StringVar(&common.PsqlDBName, "pDB", "iotware", "-pDB=iotware")
@@ -63,6 +64,7 @@ Options:
 	-rV=redisVersion              The redis version
 	-rC=redisCluster              Is Redis a cluster
 	-pH=psqlHost                  The postgres instance
+	-pPt=psqlPort                 The postgres Port
 	-pU=psqlUserName              The postgres username
 	-pP=psqlPassword              The postgres password
 	-pDB=psqlDBName               The postgres dbname
@@ -279,8 +281,8 @@ func getDataFromHistory() {
 	decoder := json.NewDecoder(fileData)
 	for {
 		var (
-			record []common.DeviceHistory
-			ok     bool
+			record  []common.DeviceHistory
+			ok      bool
 			tempHis common.DeviceHistory
 		)
 		err := decoder.Decode(&tempHis)

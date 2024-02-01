@@ -65,6 +65,7 @@ var (
 	PsqlUser            string
 	PsqlPwd             string
 	PsqlDBName          string
+	PsqlPort            string
 	Mode                string
 	Output              string
 	Input               string
