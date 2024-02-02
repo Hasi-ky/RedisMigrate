@@ -1,7 +1,6 @@
 package common
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -10,7 +9,6 @@ func ByteToCID(args []byte) CID {
 }
 
 func ByteToAddr(args []byte) DevAddr {
-	fmt.Println(args)
 	return [4]byte{args[0], args[1], args[2], args[3]}
 }
 

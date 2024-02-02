@@ -1,29 +1,29 @@
 package commands
 
 import (
+	"batch/common"
+	"batch/db/redis"
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v7"
-	"log"
 	"os"
 	"time"
+	log "github.com/sirupsen/logrus"
 )
 
 type Restorer struct {
 	Host           string
 	Password       string
-	Client         map[uint64]*redis.Client
+	Client         map[uint64]redis.DBClient
 	Stream         *os.File
 	Count          uint64
 	jsonStringList chan string
 }
 
 func (r *Restorer) Init() {
-
 	r.jsonStringList = make(chan string, 1)
-	r.Client = make(map[uint64]*redis.Client)
+	r.Client = make(map[uint64]redis.DBClient)
 	r.Count = 0
 }
 
@@ -31,56 +31,43 @@ func (r *Restorer) Restore() {
 
 	r.readFile()
 	for {
-
 		jsonString := r.getLine()
-
 		if jsonString == "" {
 			break
 		}
-
 		record := &Record{}
 		err := json.Unmarshal([]byte(jsonString), &record)
-
 		if err != nil {
-
-			log.Printf("Unmarshal %s error , %s\n", jsonString, err)
+			log.Errorf("Unmarshal %s error , %s\n", jsonString, err)
 			continue
 		}
-
 		b, err := base64.StdEncoding.DecodeString(record.Value)
 		if err != nil {
-
-			log.Printf("base64 decode %s error , %s\n", record.Value, err)
+			log.Errorf("base64 decode %s error , %s\n", record.Value, err)
 			continue
 		}
-
 		record.Value = string(b)
 		duration, err := time.ParseDuration(fmt.Sprintf("%ds", record.TTL))
 		if err != nil {
-			log.Printf("Parse ttl(%d) error, %s\n", record.TTL, err)
+			log.Errorf("Parse ttl(%d) error, %s\n", record.TTL, err)
 			continue
 		}
-
 		client := r.getClient(record.DatabaseId)
 		if client == nil {
 			continue
 		}
-
 		if duration > 0 {
-			_, err = client.RestoreReplace(record.Key, duration, record.Value).Result()
+			_, err = client.RestoreReplace(record.Key, duration, record.Value)
 		} else {
-			_, err = client.RestoreReplace(record.Key, 0, record.Value).Result()
+			_, err = client.RestoreReplace(record.Key, 0, record.Value)
 		}
-
 		if err != nil {
-
-			log.Printf("Restore error , struct: %#v , error: %s\n", record, err)
+			log.Errorf("Restore error , struct: %#v , error: %s\n", record, err)
 			break
 		}
 
 		r.Count++
 		if r.Count%1000 == 0 {
-
 			r.PrintReport()
 		}
 	}
@@ -98,7 +85,6 @@ func (r *Restorer) getLine() string {
 	for {
 		select {
 		case jsonString = <-r.jsonStringList:
-
 			return jsonString
 
 		default:
@@ -108,21 +94,20 @@ func (r *Restorer) getLine() string {
 		}
 	}
 }
-
-func (r *Restorer) getClient(dbId uint64) (client *redis.Client) {
-
+ 
+ 
+func (r *Restorer) getClient(dbId uint64) (client redis.DBClient) {
 	var isExist bool
 	if client, isExist = r.Client[dbId]; isExist {
-
 		return
 	}
 
-	r.Client[dbId] = redis.NewClient(&redis.Options{
-		Addr:     r.Host,
-		Password: r.Password, // no password set
-		DB:       int(dbId),  // use default DB
-	})
-
+	if !common.RedisCluster {
+		r.Client[dbId], _ = redis.NewClientForDB(r.Host,r.Password,int(dbId))
+	} else {
+		server := []string{r.Host}
+		r.Client[dbId], _ = redis.NewClusterClient(server,r.Password)
+	}
 	return r.Client[dbId]
 }
 
@@ -141,8 +126,7 @@ func (r *Restorer) readFile() {
 func (r *Restorer) CloseClients() {
 
 	for dbId, client := range r.Client {
-
-		client.Close()
+		client.CloseSession()
 		delete(r.Client, dbId)
 	}
 }
@@ -160,7 +144,7 @@ func (r *Restorer) CloseStream() {
 
 func (r *Restorer) PrintReport() {
 
-	log.Printf("Restored %d Record(s).\n", r.Count)
+	log.Infof("Restored %d Record(s).\n", r.Count)
 }
 
 func Restore(host, password, path string) {
@@ -168,7 +152,7 @@ func Restore(host, password, path string) {
 	fp, err := os.Open(path)
 	if err != nil {
 
-		log.Printf("Open data file error, %s\n", err)
+		log.Errorf("Open data file error, %s\n", err)
 		return
 	}
 	restorer := &Restorer{
